@@ -27,8 +27,10 @@ import heros.InterproceduralCFG;
 import heros.flowfunc.Gen;
 import heros.flowfunc.Identity;
 import heros.flowfunc.KillAll;
+import heros.flowfunc.Transfer;
 import sootup.analysis.interprocedural.ifds.DefaultJimpleIFDSTabulationProblem;
 import sootup.core.jimple.basic.Immediate;
+import sootup.core.jimple.basic.LValue;
 import sootup.core.jimple.basic.Local;
 import sootup.core.jimple.basic.Value;
 import sootup.core.jimple.common.constant.StringConstant;
@@ -94,92 +96,157 @@ public class TaintAnalysisProblem
         return new Local("<<zero>>", NullType.getInstance());
     }
 
-    FlowFunction<Value> getNormalFlow(Stmt curr, Stmt succ) {
-        if (curr instanceof JAssignStmt) {
-            final JAssignStmt assign = (JAssignStmt) curr;
+
+    /**
+     * TODO: Start here
+     * In this exercise you will implement a full-fledged whole-program interprocedural taint analysis.
+     * A taint denotes critical information that we want to track throughout the application.
+     *
+     * In the following we will generate a taint, if and only if currentStmt is in the following form:
+     * x = "SECRET"
+     *
+     * taints can be propagated:
+     * (1) intraprocedurally, through assignments:
+     * y = x
+     *
+     * (2) interprocedurally, through method calls:
+     * foo(x)
+     *
+     * (3) and through method returns:
+     * y = bar()
+     *
+     *
+     * In the following, you will find instructions to fill the corresponding TODO blocks and uncomment boilerplate code blocks.
+     *
+     */
+
+    /**
+     * NormalFlow corresponds to all intraprocedural statements, all the statements except method calls (invokes)
+     *
+     * @param currentStmt
+     * @param successorStmt
+     * @return
+     */
+    FlowFunction<Value> getNormalFlow(Stmt currentStmt, Stmt successorStmt) {
+        /**
+         * TODO: 1. What should should be the type of the currentStmt?
+         * Hint: check the implementers of the Stmt interface
+         */
+        if (currentStmt instanceof JAssignStmt) {
+            final JAssignStmt assign = (JAssignStmt) currentStmt;
             final Value leftOp = assign.getLeftOp();
             final Value rightOp = assign.getRightOp();
-            // generate taint only at x="SECRET"
+            /***
+             * TODO: 2. Generating a taint
+             * If the rightOp is instanceof StringConstant and if it has the value "SECRET",
+             * we will generate a taint on the leftOp using an existing FlowFunction implementation, Gen (Generate).
+             */
+
             if (rightOp instanceof StringConstant) {
                 StringConstant str = (StringConstant) rightOp;
                 if (str.getValue().equals("SECRET")) {
                     return new Gen<>(leftOp, zeroValue());
                 }
             }
-            return new FlowFunction<Value>() {
-                @Override
-                public Set<Value> computeTargets(Value source) {
-                    // Kill T = ...
-                    if (source == leftOp) {
-                        return Collections.emptySet();
-                    }
-                    Set<Value> res = new HashSet<>();
-                    res.add(source);
-                    // x = T
-                    if (source == rightOp) {
-                        res.add(leftOp);
-                    }
-                    return res;
-                }
-            };
+
+            /***
+             * TODO: 3. Transferring an existing taint
+             * A generated taint can be transferred between different variable through assignments.
+             * What is the appropriate FlowFunction implementation?
+             */
+            return new Transfer<>(leftOp, rightOp);
         }
-        return Identity.v();
+        return Identity.v(); // Anything else continues as it is
     }
 
+    /**
+     * CallFlow corresponds to a method call.
+     * During a method call actual arguments are mapped into the local parameters in the callee method's context.
+     *
+     * @param callStmt
+     * @param destinationMethod
+     * @return
+     */
     FlowFunction<Value> getCallFlow(Stmt callStmt, final SootMethod destinationMethod) {
         AbstractInvokeExpr ie = callStmt.getInvokeExpr();
         final List<Immediate> callArgs = ie.getArgs();
-        Map<Value, Value> callArgsToLocalParamsMapping = new HashMap<>();
+        Map<Value, Value> callArgsToLocalParamsMapping = new HashMap<>(); // a map of call arguments to local parameters
         for (int i = 0; i < destinationMethod.getParameterCount(); i++) {
             callArgsToLocalParamsMapping.put(callArgs.get(i), destinationMethod.getBody().getParameterLocal(i));
         }
 
-        return new FlowFunction<Value>() {
-            @Override
-            public Set<Value> computeTargets(Value source) {
-                Set<Value> ret = new HashSet<>();
-                for (Value callArg : callArgsToLocalParamsMapping.keySet()) {
-                    if (callArg.equivTo(source)) {
-                        ret.add(callArgsToLocalParamsMapping.get(callArg)); // corresponding local parameter
-                    }
-                }
-                return ret;
-            }
-        };
+        /**
+         * TODO: 4. Mapping (Transferring) from call args to local params
+         * implement the code block that transfers all callArgs to their corresponding LocalParams
+         */
+
+        for (Value callArg : callArgsToLocalParamsMapping.keySet()) {
+            return new Transfer<>(callArgsToLocalParamsMapping.get(callArg), callArg);
+        }
+
+        return KillAll.v(); // Anything else should not be mapped into this context
     }
 
+    /**
+     * ReturnFlow corresponds to returning from a method call.
+     * During a method return, the returned value is mapped to the caller method's context.
+     *
+     * @param callSite
+     * @param calleeMethod
+     * @param exitStmt
+     * @param returnSite
+     * @return
+     */
     FlowFunction<Value> getReturnFlow(
             final Stmt callSite, final SootMethod calleeMethod, Stmt exitStmt, Stmt returnSite) {
 
+        /**
+         * TODO: 5. What type should be the exitStmt?
+         */
         if (exitStmt instanceof JReturnStmt) {
             JReturnStmt returnStmt = (JReturnStmt) exitStmt;
-            final Value retOp = returnStmt.getOp();
-            if (retOp instanceof StringConstant) {
-                StringConstant str = (StringConstant) retOp;
-                if (str.getValue().equals("SECRET")) {
-                    if (callSite instanceof JAssignStmt) {
-                        JAssignStmt assign = (JAssignStmt) callSite;
-                        final Value leftOp = assign.getLeftOp();
-                        return new Gen<>(leftOp, zeroValue());
+            /**
+             * TODO: 6. What type should be the callSite stmt?
+             */
+            if (callSite instanceof JAssignStmt) {
+                JAssignStmt assignStmt = (JAssignStmt) callSite;
+                final Value retOp = returnStmt.getOp();
+                if(!(retOp instanceof StringConstant)){ // normal parameter return
+                    /**
+                     * TODO: 7. Mapping (Transferring) the returned parameter to the variable at the call site
+                     *
+                     */
+                    LValue leftOp = assignStmt.getLeftOp();
+                    return new Transfer<>(leftOp, retOp);
+                }else { // retOp is StringConstant
+                    /**
+                     * TODO: Bonus Task
+                     * A method might return the StringConstant "SECRET"
+                     * Implement the code block that handles this case.
+                     *
+                     */
+                    StringConstant str = (StringConstant) retOp;
+                    if (str.getValue().equals("SECRET")) {
+                        if (callSite instanceof JAssignStmt) {
+                            JAssignStmt assign = (JAssignStmt) callSite;
+                            final Value leftOp = assign.getLeftOp();
+                            return new Gen<>(leftOp, zeroValue());
+                        }
                     }
                 }
             }
-            return new FlowFunction<Value>() {
-                @Override
-                public Set<Value> computeTargets(Value source) {
-                    Set<Value> ret = new HashSet<>();
-                    if (callSite instanceof AbstractDefinitionStmt && source == retOp) {
-                        AbstractDefinitionStmt defnStmt = (AbstractDefinitionStmt) callSite;
-                        ret.add(defnStmt.getLeftOp());
-                    }
-                    return ret;
-                }
-            };
         }
-        return KillAll.v(); // Anything else should not be returned
+        return KillAll.v(); // Anything else should not be returned from this context
     }
 
+    /**
+     * Not part of the exercise
+     *
+     * @param callSite
+     * @param returnSite
+     * @return
+     */
     FlowFunction<Value> getCallToReturnFlow(final Stmt callSite, Stmt returnSite) {
-        return Identity.v();
+        return Identity.v(); // Anything else continues as it is
     }
 }
