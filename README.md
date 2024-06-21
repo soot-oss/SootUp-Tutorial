@@ -13,3 +13,12 @@ Welcome to the PLDI'24 tutorial "Static Analysis with SootUp". In this tutorial 
 5. Number of **assignment statements** in method *„boolean test(java.lang.String)“* in class *„org.reflections.util.FilterBuilder“*
 
 You can use the provided [boilerplate](Exercise%201) to implement your solution.
+
+
+## Exercise 1: Get to know the API - Solution
+
+1. Number of classes: 74
+2. Number of private methods: 175
+3. Number of static fields: 44
+4. Number of methods where the return type is the same as its first parameter type (if exists) 26
+5. Number of assign statements in method: 16
